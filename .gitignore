@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+.eggs/
+*.egg-info/
+.pytest_cache/
+uploads/
+edge_sensor_data.csv
+metrics_log.csv
