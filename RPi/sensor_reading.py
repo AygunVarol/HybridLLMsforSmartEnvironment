@@ -26,6 +26,7 @@ def init_csv():
                 "pressure",
                 "humidity",
                 "gas",
+                "air_quality",
             ])
 
 
@@ -40,6 +41,7 @@ def append_to_csv(row):
                 row.get("pressure"),
                 row.get("humidity"),
                 row.get("gas"),
+                row.get("air_quality"),
             ]
         )
 
@@ -104,6 +106,30 @@ def run_sensor_reading():
     sensor.set_gas_heater_duration(150)
     sensor.select_gas_heater_profile(0)
 
+    # --- Indoor Air Quality Setup ---
+    # Collect burn-in data to establish a gas baseline.
+    start_time = time.time()
+    burn_in_time = 300
+    burn_in_data = []
+
+    print('Collecting gas resistance burn-in data for 5 mins')
+    while time.time() - start_time < burn_in_time:
+        if sensor.get_sensor_data() and sensor.data.heat_stable:
+            gas = sensor.data.gas_resistance
+            burn_in_data.append(gas)
+            print(f'Gas: {gas} Ohms')
+            time.sleep(1)
+
+    gas_baseline = sum(burn_in_data[-50:]) / 50.0
+    hum_baseline = 40.0
+    hum_weighting = 0.25
+    print(
+        'Gas baseline: {0} Ohms, humidity baseline: {1:.2f} %RH'.format(
+            gas_baseline,
+            hum_baseline,
+        )
+    )
+
     print('\nPolling sensor data and sending to server:')
     try:
         while True:
@@ -119,6 +145,30 @@ def run_sensor_reading():
                     'gas': sensor.data.gas_resistance if sensor.data.heat_stable else ''
                 }
 
+                if sensor.data.heat_stable:
+                    gas = sensor.data.gas_resistance
+                    hum = sensor.data.humidity
+                    gas_offset = gas_baseline - gas
+                    hum_offset = hum - hum_baseline
+
+                    if hum_offset > 0:
+                        hum_score = (100 - hum_baseline - hum_offset)
+                        hum_score /= (100 - hum_baseline)
+                        hum_score *= (hum_weighting * 100)
+                    else:
+                        hum_score = (hum_baseline + hum_offset)
+                        hum_score /= hum_baseline
+                        hum_score *= (hum_weighting * 100)
+
+                    if gas_offset > 0:
+                        gas_score = (gas / gas_baseline)
+                        gas_score *= (100 - (hum_weighting * 100))
+                    else:
+                        gas_score = 100 - (hum_weighting * 100)
+
+                    air_quality_score = hum_score + gas_score
+                    row['air_quality'] = air_quality_score
+
                 output = '{0:.2f} C, {1:.2f} hPa, {2:.2f} %RH'.format(
                     sensor.data.temperature,
                     sensor.data.pressure,
@@ -126,6 +176,8 @@ def run_sensor_reading():
                 )
                 if sensor.data.heat_stable:
                     output += f", {row['gas']:.2f} Ohms"
+                    if 'air_quality' in row:
+                        output += f", AQ: {row['air_quality']:.2f}"
                 print(output)
 
                 append_to_csv(row)
