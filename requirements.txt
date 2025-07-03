@@ -1,0 +1,10 @@
+flask
+psutil
+transformers
+sentence-transformers
+pandas
+torch
+llama-cpp-python
+requests
+bme680
+groq
